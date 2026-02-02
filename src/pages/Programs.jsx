@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-/* ========= helpers ========= */
-
-function fmtDate(iso) {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
+/* =======================
+   Utils
+======================= */
 
 function initials(label) {
   const t = (label ?? "").trim();
@@ -21,70 +15,23 @@ function initials(label) {
   return (a + b).toUpperCase();
 }
 
-function GlassBox({ children, style }) {
-  return (
-    <div
-      style={{
-        background: "rgba(18,24,35,.65)",
-        border: "1px solid var(--stroke)",
-        borderRadius: 18,
-        boxShadow: "var(--shadow)",
-        padding: 12,
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Btn({ children, variant = "ghost", ...props }) {
-  const base = {
-    borderRadius: 14,
-    padding: "10px 12px",
-    fontWeight: 900,
-    cursor: "pointer",
-    border: "1px solid var(--stroke)",
-    background: "rgba(255,255,255,.06)",
-    color: "var(--text)",
-  };
-
-  const variants = {
-    ghost: base,
-    primary: {
-      ...base,
-      background: "rgba(255,122,24,.18)",
-      border: "1px solid rgba(255,122,24,.30)",
-    },
-    danger: {
-      ...base,
-      background: "rgba(255,80,80,.12)",
-      border: "1px solid rgba(255,80,80,.28)",
-    },
-    flat: {
-      ...base,
-      background: "transparent",
-      border: "1px solid var(--stroke)",
-    },
-  };
-
-  return (
-    <button {...props} style={{ ...variants[variant], ...(props.style ?? {}) }}>
-      {children}
-    </button>
-  );
-}
-
-/* ========= page ========= */
+/* =======================
+   Page
+======================= */
 
 export default function Programs() {
+  const nav = useNavigate();
+
   const [loading, setLoading] = useState(true);
   const [programs, setPrograms] = useState([]);
+
+  // crear
   const [title, setTitle] = useState("");
 
-  // inline edit
-  const [editingId, setEditingId] = useState(null);
-  const [editingTitle, setEditingTitle] = useState("");
+  // editar modal
+  const [editOpen, setEditOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
 
   async function load() {
     setLoading(true);
@@ -110,7 +57,7 @@ export default function Programs() {
 
     const { data: sess } = await supabase.auth.getSession();
     const userId = sess.session?.user?.id;
-    if (!userId) return alert("No hay sesión.");
+    if (!userId) return;
 
     const { error } = await supabase.from("programs").insert({
       user_id: userId,
@@ -123,24 +70,26 @@ export default function Programs() {
     load();
   }
 
-  function startEdit(p) {
-    setEditingId(p.id);
-    setEditingTitle(p.title);
+  function openEdit(p) {
+    setEditId(p.id);
+    setEditTitle(p.title ?? "");
+    setEditOpen(true);
   }
 
-  function cancelEdit() {
-    setEditingId(null);
-    setEditingTitle("");
+  function closeEdit() {
+    setEditOpen(false);
+    setEditId(null);
+    setEditTitle("");
   }
 
-  async function saveEdit(programId) {
-    const t = editingTitle.trim();
+  async function saveEdit() {
+    const t = editTitle.trim();
     if (!t) return alert("El nombre no puede quedar vacío.");
 
-    const { error } = await supabase.from("programs").update({ title: t }).eq("id", programId);
+    const { error } = await supabase.from("programs").update({ title: t }).eq("id", editId);
     if (error) return alert(error.message);
 
-    cancelEdit();
+    closeEdit();
     load();
   }
 
@@ -154,7 +103,7 @@ export default function Programs() {
     load();
   }
 
-  const count = useMemo(() => programs.length, [programs]);
+  const list = useMemo(() => programs, [programs]);
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "18px 16px 120px" }}>
@@ -162,9 +111,7 @@ export default function Programs() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
           <div style={{ fontSize: 20, fontWeight: 950 }}>Rutinas</div>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            Tus planes guardados ({count})
-          </div>
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>Creá y administrá tus rutinas</div>
         </div>
 
         <div
@@ -183,64 +130,63 @@ export default function Programs() {
         </div>
       </div>
 
-      {/* Crear rutina */}
-      <div style={{ marginTop: 16 }}>
-        <GlassBox>
-          <form
-            onSubmit={createProgram}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr auto auto",
-              gap: 10,
-              alignItems: "center",
-            }}
-          >
-            <input
-              placeholder="Nueva rutina (ej: Full body 3 días)"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              style={{
-                width: "100%",
-              }}
-            />
-
-            <Btn type="submit" variant="primary">
-              Crear
-            </Btn>
-
-            <Btn type="button" onClick={load}>
-              Refrescar
-            </Btn>
-          </form>
-        </GlassBox>
-      </div>
+      {/* Crear */}
+      <form
+        onSubmit={createProgram}
+        style={{
+          marginTop: 16,
+          background: "rgba(18,24,35,.65)",
+          border: "1px solid var(--stroke)",
+          borderRadius: 18,
+          padding: 12,
+          boxShadow: "var(--shadow)",
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <input
+          placeholder='Nueva rutina (ej: "Full body")'
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          style={{ flex: "1 1 240px", minWidth: 220 }}
+        />
+        <button type="submit" style={{ fontWeight: 900 }}>
+          Crear
+        </button>
+        <button type="button" onClick={load} style={{ fontWeight: 900 }}>
+          Refrescar
+        </button>
+      </form>
 
       {/* Grid */}
       <div style={{ marginTop: 16 }}>
         {loading ? (
           <div style={{ color: "var(--muted)" }}>Cargando rutinas…</div>
-        ) : programs.length === 0 ? (
-          <div style={{ color: "var(--muted)" }}>Todavía no tenés rutinas.</div>
+        ) : list.length === 0 ? (
+          <div style={{ color: "var(--muted)" }}>No tenés rutinas todavía.</div>
         ) : (
           <>
             <style>{`
-              /* Mobile: 2 columnas sí o sí */
-              .programs-grid{
-                display:grid;
-                gap:12px;
+              /* Mobile: SI O SI 2 columnas */
+              .program-grid {
+                display: grid;
+                gap: 12px;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
               }
-              /* Desktop: agrega cards */
-              @media (min-width: 820px){
-                .programs-grid{
-                  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+              /* Desktop: agrega columnas, no estira infinito */
+              @media (min-width: 900px) {
+                .program-grid {
+                  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
                 }
               }
             `}</style>
 
-            <div className="programs-grid">
-              {programs.map((p) => {
-                const isEditing = editingId === p.id;
+            <div className="program-grid">
+              {list.map((p) => {
+                const label = p.title ?? "Sin título";
+                const badge = initials(label);
 
                 return (
                   <div
@@ -251,128 +197,100 @@ export default function Programs() {
                       border: "1px solid var(--stroke)",
                       background: "rgba(18,24,35,.65)",
                       boxShadow: "var(--shadow)",
-                      padding: 12,
-                      overflow: "hidden",
-                      minHeight: 140,
-
-                      width: "100%",
-                      // maxWidth: 520,
-                      margin: "0 auto",
-
+                      padding: 14,
+                      minHeight: 150,
                       display: "grid",
-                      gridTemplateColumns: "clamp(72px, 18vw, 110px) 1fr",
-                      gap: 12,
-                      alignItems: "center",
+                      gridTemplateRows: "auto 1fr auto",
+                      gap: 10,
+                      textAlign: "left",
                     }}
                   >
-                    {/* Badge fecha */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 8,
-                        right: 10,
-                        fontSize: 11,
-                        fontWeight: 900,
-                        color: "rgba(255,255,255,.7)",
-                        background: "rgba(255,255,255,.06)",
-                        border: "1px solid var(--stroke)",
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                      }}
-                      title={p.created_at}
-                    >
-                      {fmtDate(p.created_at)}
+                    {/* TOP ROW: icon + contador */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      {/* iconito badge (igual a Exercises) */}
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 14,
+                          background: "rgba(255,122,24,.16)",
+                          border: "1px solid rgba(255,122,24,.25)",
+                          display: "grid",
+                          placeItems: "center",
+                          fontWeight: 950,
+                          color: "rgba(255,255,255,.9)",
+                        }}
+                      >
+                        {badge}
+                      </div>
+
+                      {/* contador arriba derecha (podés mostrar días más adelante; por ahora usamos “—”) */}
+                      <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 800 }}>—</div>
                     </div>
 
-                    {/* Tile izquierdo */}
-                    <div
-                      style={{
-                        width: "clamp(72px, 18vw, 110px)",
-                        height: "clamp(72px, 18vw, 110px)",
-                        borderRadius: 18,
-                        background: "rgba(255,122,24,.15)",
-                        border: "1px solid rgba(255,122,24,.25)",
-                        display: "grid",
-                        placeItems: "center",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div style={{ color: "rgba(255,255,255,.85)", fontWeight: 950, fontSize: 16 }}>
-                        {initials(p.title)}
+                    {/* Título */}
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <div
+                        style={{
+                          color: "white",
+                          fontWeight: 950,
+                          fontSize: 18,
+                          lineHeight: 1.1,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                        title={label}
+                      >
+                        {label}
                       </div>
+
                     </div>
 
-                    {/* Contenido */}
-                    <div
-                      style={{
-                        height: "100%",
-                        display: "grid",
-                        gridTemplateRows: "1fr auto",
-                        alignItems: "center",
-                        textAlign: "center",
-                        paddingRight: 18, // espacio para badge fecha
-                      }}
-                    >
-                      {/* Título */}
-                      <div style={{ display: "grid", placeItems: "center", gap: 8 }}>
-                        {isEditing ? (
-                          <input
-                            value={editingTitle}
-                            onChange={(e) => setEditingTitle(e.target.value)}
-                            autoFocus
-                            style={{ width: "100%" }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              fontSize: "clamp(16px, 4.5vw, 24px)",
-                              fontWeight: 950,
-                              color: "white",
-                              lineHeight: 1.05,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              maxWidth: "100%",
-                            }}
-                          >
-                            {p.title}
-                          </div>
-                        )}
+                    {/* Acciones */}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => nav(`/programs/${p.id}`)}
+                        style={{
+                          fontWeight: 900,
+                          borderRadius: 14,
+                          padding: "10px 12px",
+                          background: "rgba(255,122,24,.15)",
+                          border: "1px solid rgba(255,122,24,.28)",
+                        }}
+                      >
+                        Abrir
+                      </button>
 
-                        {/* CTA */}
-                        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 800, whiteSpace: "nowrap" }}>
-                          Tocá para abrir
-                        </div>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(p)}
+                        style={{
+                          fontWeight: 900,
+                          borderRadius: 14,
+                          padding: "10px 12px",
+                          background: "rgba(255,255,255,.06)",
+                          border: "1px solid var(--stroke)",
+                        }}
+                      >
+                        Editar
+                      </button>
 
-                      {/* Botonera */}
-                      <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-                        <Link to={`/programs/${p.id}`} style={{ textDecoration: "none" }}>
-                          <Btn type="button" variant="primary">
-                            Abrir
-                          </Btn>
-                        </Link>
-
-                        {isEditing ? (
-                          <>
-                            <Btn type="button" onClick={() => saveEdit(p.id)} variant="primary">
-                              Guardar
-                            </Btn>
-                            <Btn type="button" onClick={cancelEdit}>
-                              Cancelar
-                            </Btn>
-                          </>
-                        ) : (
-                          <>
-                            <Btn type="button" onClick={() => startEdit(p)}>
-                              Editar
-                            </Btn>
-                            <Btn type="button" onClick={() => deleteProgram(p.id)} variant="danger">
-                              Eliminar
-                            </Btn>
-                          </>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteProgram(p.id)}
+                        style={{
+                          fontWeight: 900,
+                          borderRadius: 14,
+                          padding: "10px 12px",
+                          background: "rgba(255,80,80,.10)",
+                          border: "1px solid rgba(255,80,80,.25)",
+                          color: "rgba(255,255,255,.92)",
+                        }}
+                      >
+                        Eliminar
+                      </button>
                     </div>
                   </div>
                 );
@@ -381,6 +299,98 @@ export default function Programs() {
           </>
         )}
       </div>
+
+      {/* Modal editar */}
+      {editOpen && (
+        <div
+          onClick={closeEdit}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.55)",
+            backdropFilter: "blur(6px)",
+            zIndex: 80,
+            display: "grid",
+            placeItems: "center",
+            padding: 14,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(520px, 100%)",
+              borderRadius: 22,
+              border: "1px solid var(--stroke)",
+              background: "rgba(18,24,35,.92)",
+              boxShadow: "var(--shadow)",
+              padding: 14,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 16, fontWeight: 950 }}>Editar rutina</div>
+
+              <button
+                type="button"
+                onClick={closeEdit}
+                style={{
+                  background: "rgba(255,255,255,.06)",
+                  border: "1px solid var(--stroke)",
+                  color: "var(--text)",
+                  padding: "10px 12px",
+                  borderRadius: 14,
+                  fontWeight: 900,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              <input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="Nombre de la rutina"
+                autoFocus
+                style={{ width: "100%" }}
+              />
+
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  style={{
+                    fontWeight: 900,
+                    borderRadius: 14,
+                    padding: "10px 14px",
+                    background: "rgba(255,255,255,.06)",
+                    border: "1px solid var(--stroke)",
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={saveEdit}
+                  disabled={!editTitle.trim()}
+                  style={{
+                    fontWeight: 900,
+                    borderRadius: 14,
+                    padding: "10px 14px",
+                    background: !editTitle.trim() ? "rgba(255,122,24,.06)" : "rgba(255,122,24,.18)",
+                    border: "1px solid rgba(255,122,24,.30)",
+                    opacity: !editTitle.trim() ? 0.6 : 1,
+                    cursor: !editTitle.trim() ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
