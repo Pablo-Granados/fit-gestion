@@ -27,7 +27,7 @@ export default function Layout({ title, children }) {
         <nav style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Item to="/exercises" label="Ejercicios" />
           <Item to="/programs" label="Rutinas" />
-          <Item to="/workouts" label="Entrenos" />
+          <Item to="/workouts" label="Registros" />
           <Item to="/progress" label="Progreso" />
         </nav>
       </div>

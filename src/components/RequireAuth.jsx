@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-export default function RequireAuth({ children }) {
+export default function RequireAuth() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
 
@@ -27,5 +27,7 @@ export default function RequireAuth({ children }) {
 
   if (loading) return <div style={{ padding: 16 }}>Cargando...</div>;
   if (!session) return <Navigate to="/login" replace />;
-  return children;
+  return <Outlet />;
 }
+
+

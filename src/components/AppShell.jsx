@@ -91,7 +91,7 @@ export default function AppShell({ title, subtitle, children }) {
         >
           <NavItem to="/exercises" label="Ejercicios" icon="🏋️" />
           <NavItem to="/programs" label="Rutinas" icon="🗓️" />
-          <NavItem to="/workouts" label="Entrenos" icon="⏱️" />
+          <NavItem to="/workouts" label="Registros" icon="⏱️" />
           <NavItem to="/progress" label="Progreso" icon="📈" />
         </div>
       </div>
