@@ -256,7 +256,7 @@ export default function Programs() {
                       minHeight: 140,
 
                       width: "100%",
-                      maxWidth: 520,
+                      // maxWidth: 520,
                       margin: "0 auto",
 
                       display: "grid",
