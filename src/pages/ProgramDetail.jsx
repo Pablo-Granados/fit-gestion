@@ -1,696 +1,712 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import FitCard from "../components/FitCard";
+import Layout from "../components/Layout";
 import { supabase } from "../lib/supabase";
+import ExercisePicker from "../features/exercises/ExercisePicker";
 
+/* =======================
+   Helpers
+======================= */
 
-function groupLabel(muscle) {
-    const m = (muscle ?? "").toString().toLowerCase();
-
-    if (m.includes("pecho")) return "Pecho";
-    if (m.includes("espalda")) return "Espalda";
-    if (m.includes("homb")) return "Hombros";
-    if (m.includes("bíceps") || m.includes("biceps")) return "Bíceps";
-    if (m.includes("tríceps") || m.includes("triceps")) return "Tríceps";
-    if (m.includes("core")) return "Core";
-
-    if (m.includes("cuádr") || m.includes("cuadr")) return "Cuádriceps";
-    if (m.includes("isqu")) return "Isquios";
-    if (m.includes("glút") || m.includes("glut")) return "Glúteos";
-    if (m.includes("gemel")) return "Gemelos";
-    if (m.includes("aductor")) return "Aductores";
-
-    if (m.includes("pierna")) return "Piernas";
-
-    return muscle ? muscle : "Otros";
+function safeNum(v) {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
-const GROUP_META = {
-    Pecho: { emoji: "🫁" },
-    Espalda: { emoji: "🧱" },
-    Hombros: { emoji: "🧩" },
-    Bíceps: { emoji: "💪" },
-    Tríceps: { emoji: "🔧" },
-    Core: { emoji: "⚡" },
-    Cuádriceps: { emoji: "🦵" },
-    Isquios: { emoji: "🏃" },
-    Glúteos: { emoji: "🍑" },
-    Gemelos: { emoji: "🦶" },
-    Aductores: { emoji: "🧲" },
-    Piernas: { emoji: "🦿" },
-    Otros: { emoji: "📦" },
-};
-
-function groupOrder(label) {
-    const order = [
-        "Pecho",
-        "Espalda",
-        "Hombros",
-        "Bíceps",
-        "Tríceps",
-        "Core",
-        "Cuádriceps",
-        "Isquios",
-        "Glúteos",
-        "Gemelos",
-        "Aductores",
-        "Piernas",
-        "Otros",
-    ];
-    const i = order.indexOf(label);
-    return i === -1 ? 999 : i;
+function patchItemInState(setItemsByDay, dayId, itemId, patch) {
+  setItemsByDay((prev) => {
+    const next = { ...prev };
+    const list = [...(next[dayId] ?? [])];
+    const idx = list.findIndex((x) => x.id === itemId);
+    if (idx === -1) return prev;
+    list[idx] = { ...list[idx], ...patch };
+    next[dayId] = list;
+    return next;
+  });
 }
+
+function removeItemFromState(setItemsByDay, dayId, itemId) {
+  setItemsByDay((prev) => {
+    const next = { ...prev };
+    next[dayId] = (next[dayId] ?? []).filter((x) => x.id !== itemId);
+    next[dayId] = (next[dayId] ?? []).map((x, i) => ({ ...x, sort_order: i + 1 }));
+    return next;
+  });
+}
+
+/* =======================
+   Confirm Modal
+======================= */
+
+function ConfirmModal({
+  open,
+  title,
+  message,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  onConfirm,
+  onCancel,
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 200,
+        background: "rgba(0,0,0,.55)",
+        backdropFilter: "blur(6px)",
+        display: "grid",
+        placeItems: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(520px, 100%)",
+          borderRadius: 18,
+          border: "1px solid var(--stroke)",
+          background: "rgba(18,24,35,.95)",
+          boxShadow: "var(--shadow)",
+          padding: 16,
+          display: "grid",
+          gap: 10,
+        }}
+      >
+        <div style={{ fontWeight: 950, fontSize: 16, color: "white" }}>{title}</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.35 }}>{message}</div>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              background: "rgba(255,255,255,.06)",
+              border: "1px solid var(--stroke)",
+              color: "white",
+              borderRadius: 12,
+              padding: "10px 12px",
+              fontWeight: 900,
+            }}
+          >
+            {cancelText}
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            style={{
+              background: "rgba(255,122,24,.18)",
+              border: "1px solid rgba(255,122,24,.35)",
+              color: "white",
+              borderRadius: 12,
+              padding: "10px 12px",
+              fontWeight: 950,
+            }}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =======================
+   Page
+======================= */
 
 export default function ProgramDetail() {
-    const { id: programId } = useParams();
+  const { id: programId } = useParams();
 
-    const [loading, setLoading] = useState(true);
-    const [program, setProgram] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [program, setProgram] = useState(null);
 
-    const [days, setDays] = useState([]);
-    const [itemsByDay, setItemsByDay] = useState({});
-    const [selectedDayId, setSelectedDayId] = useState("");
+  const [days, setDays] = useState([]);
+  const [itemsByDay, setItemsByDay] = useState({});
 
-    const [newDayTitle, setNewDayTitle] = useState("Día A");
+  const [newDayTitle, setNewDayTitle] = useState("Día A");
+  const [selectedDayId, setSelectedDayId] = useState("");
 
-    // buscador
-    const [exerciseQuery, setExerciseQuery] = useState("");
-    const [allExercises, setAllExercises] = useState([]);
+  // ✅ modal confirm (ACÁ adentro del componente)
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingRemoveId, setPendingRemoveId] = useState(null);
 
-    // panel grupos
-    const [openGroup, setOpenGroup] = useState(null);
-
-    // expand cards dentro del panel
-    const [expandedId, setExpandedId] = useState(null);
-
-    // edición prescripción (Paso 12)
-    const [draftByItemId, setDraftByItemId] = useState({});
-    const [savingItemId, setSavingItemId] = useState(null);
-
-    async function loadAll() {
-        setLoading(true);
-
-        const pRes = await supabase
-            .from("programs")
-            .select("id,title")
-            .eq("id", programId)
-            .single();
-
-        if (pRes.error) {
-            console.error(pRes.error);
-            setProgram(null);
-            setLoading(false);
-            return;
-        }
-        setProgram(pRes.data);
-
-        const dRes = await supabase
-            .from("program_days")
-            .select("id,day_index,title")
-            .eq("program_id", programId)
-            .order("day_index", { ascending: true });
-
-        const daysData = dRes.data ?? [];
-        setDays(daysData);
-        if (daysData.length > 0) setSelectedDayId(daysData[0].id);
-
-        const eRes = await supabase
-            .from("exercises")
-            .select("id,name,primary_muscle,equipment,category,media_url,description")
-            .order("name", { ascending: true });
-
-        setAllExercises(eRes.data ?? []);
-
-        if (daysData.length > 0) {
-            const ids = daysData.map((d) => d.id);
-            const iRes = await supabase
-                .from("program_day_items")
-                .select("id,program_day_id,exercise_id,sort_order,prescription")
-                .in("program_day_id", ids)
-                .order("sort_order", { ascending: true });
-
-            const map = {};
-            for (const it of iRes.data ?? []) {
-                if (!map[it.program_day_id]) map[it.program_day_id] = [];
-                map[it.program_day_id].push(it);
-            }
-            setItemsByDay(map);
-        } else {
-            setItemsByDay({});
-        }
-
-        setLoading(false);
-    }
-
-    useEffect(() => {
-        loadAll();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [programId]);
-
-    const exById = useMemo(() => {
-        
-        const map = new Map();
-        for (const ex of allExercises) map.set(ex.id, ex);
-        return map;
-    }, [allExercises]);
-
-    const selectedDayExerciseIds = useMemo(() => {
-  const items = itemsByDay[selectedDayId] ?? [];
-  return new Set(items.map((it) => it.exercise_id));
-}, [itemsByDay, selectedDayId]);
-
-
-    const filteredExercises = useMemo(() => {
-        const s = exerciseQuery.trim().toLowerCase();
-        const list = !s
-            ? allExercises
-            : allExercises.filter((ex) =>
-                `${ex.name} ${ex.primary_muscle ?? ""} ${ex.equipment ?? ""} ${ex.category ?? ""}`
-                    .toLowerCase()
-                    .includes(s)
-            );
-        return list.slice(0, 400);
-    }, [exerciseQuery, allExercises]);
-
-
-    const grouped = useMemo(() => {
-        const map = new Map();
-        for (const ex of filteredExercises) {
-            const label = groupLabel(ex.primary_muscle);
-            if (!map.has(label)) map.set(label, []);
-            map.get(label).push(ex);
-        }
-        const entries = Array.from(map.entries()).sort((a, b) => {
-            return groupOrder(a[0]) - groupOrder(b[0]) || a[0].localeCompare(b[0]);
-        });
-        return entries;
-    }, [filteredExercises]);
-
-const openList = useMemo(() => {
-  if (!openGroup) return [];
-  const found = grouped.find(([label]) => label === openGroup);
-  const list = found ? found[1] : [];
-  // ✅ ocultar los que ya están en el día seleccionado
-  return list.filter((ex) => !selectedDayExerciseIds.has(ex.id));
-}, [openGroup, grouped, selectedDayExerciseIds]);
-
-
-    async function createDay(e) {
-        e.preventDefault();
-        const title = newDayTitle.trim();
-        if (!title) return;
-
-        const nextIndex = days.length + 1;
-
-        const { error } = await supabase.from("program_days").insert({
-            program_id: programId,
-            day_index: nextIndex,
-            title,
-        });
-
-        if (error) return alert(error.message);
-
-        setNewDayTitle(`Día ${String.fromCharCode(65 + nextIndex)}`);
-        loadAll();
-    }
-
-async function addExerciseToDay(exerciseId) {
-  if (!selectedDayId) return alert("Primero elegí un día.");
-
-  // ✅ bloqueo extra (por si alguien intenta agregar igual)
-  if (selectedDayExerciseIds.has(exerciseId)) return;
-
-  const existing = itemsByDay[selectedDayId] ?? [];
-  const nextSort = existing.length + 1;
-
-  const { error } = await supabase.from("program_day_items").insert({
-    program_day_id: selectedDayId,
-    exercise_id: exerciseId,
-    sort_order: nextSort,
-    prescription: { sets: 3, reps: "8-12", rest: 90 },
+  // inline edit
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [draft, setDraft] = useState({
+    series: 3,
+    repeticiones: "8-12",
+    descanso: 90,
+    kg: "",
+    notes: "",
   });
 
-  if (error) return alert(error.message);
+  async function loadAll() {
+    setLoading(true);
 
-  // si querés, podés cerrar el modal al agregar:
-  // setOpenGroup(null);
+    // 1) programa
+    const pRes = await supabase.from("programs").select("id,title,notes").eq("id", programId).single();
+    if (pRes.error) {
+      console.error(pRes.error);
+      setProgram(null);
+      setLoading(false);
+      return;
+    }
+    setProgram(pRes.data);
 
-  loadAll();
-}
+    // 2) días
+    const dRes = await supabase
+      .from("program_days")
+      .select("id,day_index,title,notes,program_id")
+      .eq("program_id", programId)
+      .order("day_index", { ascending: true });
 
-
-    async function removeItem(itemId) {
-        const { error } = await supabase.from("program_day_items").delete().eq("id", itemId);
-        if (error) return alert(error.message);
-        loadAll();
+    if (dRes.error) {
+      console.error(dRes.error);
+      setDays([]);
+      setItemsByDay({});
+      setLoading(false);
+      return;
     }
 
-    function getDraft(item) {
-        const saved = item.prescription ?? {};
-        const draft = draftByItemId[item.id];
-        return {
-            sets: draft?.sets ?? saved.sets ?? 3,
-            reps: draft?.reps ?? saved.reps ?? "8-12",
-            rest: draft?.rest ?? saved.rest ?? 90,
-        };
+    const d = dRes.data ?? [];
+    setDays(d);
+    if (d.length > 0) setSelectedDayId((prev) => prev || d[0].id);
+
+    // 3) items con JOIN
+    const dayIds = d.map((x) => x.id);
+    if (dayIds.length === 0) {
+      setItemsByDay({});
+      setLoading(false);
+      return;
     }
 
-    function updateDraft(itemId, patch) {
-        setDraftByItemId((prev) => ({
-            ...prev,
-            [itemId]: { ...(prev[itemId] ?? {}), ...patch },
-        }));
+    const iRes = await supabase
+      .from("program_day_items")
+      .select(
+        `
+        id,
+        program_day_id,
+        exercise_id,
+        sort_order,
+        prescription,
+        kg,
+        notes,
+        done,
+        done_at,
+        exercises:exercise_id (
+          id,
+          name,
+          media_url,
+          description,
+          primary_muscle,
+          equipment,
+          category
+        )
+      `
+      )
+      .in("program_day_id", dayIds)
+      .order("sort_order", { ascending: true });
+
+    if (iRes.error) {
+      console.error(iRes.error);
+      setItemsByDay({});
+      setLoading(false);
+      return;
     }
 
-    async function savePrescription(item) {
-        const draft = getDraft(item);
-
-        const sets = Number(draft.sets);
-        const rest = Number(draft.rest);
-        const reps = String(draft.reps ?? "").trim();
-
-        if (!Number.isFinite(sets) || sets <= 0) return alert("Sets inválidos");
-        if (!reps) return alert("Reps inválidas");
-        if (!Number.isFinite(rest) || rest < 0) return alert("Descanso inválido");
-
-        setSavingItemId(item.id);
-
-        const { error } = await supabase
-            .from("program_day_items")
-            .update({ prescription: { sets, reps, rest } })
-            .eq("id", item.id);
-
-        setSavingItemId(null);
-
-        if (error) return alert(error.message);
-
-        setDraftByItemId((prev) => {
-            const copy = { ...prev };
-            delete copy[item.id];
-            return copy;
-        });
-
-        loadAll();
+    const map = {};
+    for (const it of iRes.data ?? []) {
+      if (!map[it.program_day_id]) map[it.program_day_id] = [];
+      map[it.program_day_id].push(it);
     }
+    setItemsByDay(map);
 
-    if (loading) {
-        return (
-            <div style={{ maxWidth: 480, margin: "0 auto", padding: "18px 16px" }}>
-                <div style={{ color: "var(--muted)" }}>Cargando...</div>
-            </div>
-        );
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programId]);
+
+  async function createDay(e) {
+    e.preventDefault();
+    const title = newDayTitle.trim();
+    if (!title) return;
+
+    const nextIndex = (days?.length ?? 0) + 1;
+
+    const { data, error } = await supabase
+      .from("program_days")
+      .insert({
+        program_id: programId,
+        day_index: nextIndex,
+        title,
+      })
+      .select("id,day_index,title,notes,program_id")
+      .single();
+
+    if (error) return alert(error.message);
+
+    setDays((prev) => [...prev, data]);
+    setSelectedDayId(data.id);
+    setNewDayTitle(`Día ${String.fromCharCode(65 + nextIndex)}`);
+  }
+
+  // ✅ Agregar ejercicio sin reload total
+  async function addExerciseToDay(exOrId) {
+    if (!selectedDayId) return alert("Primero elegí un día.");
+
+    const exerciseId = typeof exOrId === "object" ? exOrId.id : exOrId;
+    if (!exerciseId) return alert("No pude obtener el ID del ejercicio.");
+
+    const existing = itemsByDay[selectedDayId] ?? [];
+    const nextSort = existing.length + 1;
+
+    const { data, error } = await supabase
+      .from("program_day_items")
+      .insert({
+        program_day_id: selectedDayId,
+        exercise_id: exerciseId,
+        sort_order: nextSort,
+        prescription: { series: 3, repeticiones: "8-12", descanso: 90 },
+        kg: null,
+        notes: null,
+        done: false,
+        done_at: null,
+      })
+      .select(
+        `
+        id,
+        program_day_id,
+        exercise_id,
+        sort_order,
+        prescription,
+        kg,
+        notes,
+        done,
+        done_at,
+        exercises:exercise_id (
+          id,
+          name,
+          media_url,
+          description,
+          primary_muscle,
+          equipment,
+          category
+        )
+      `
+      )
+      .single();
+
+    if (error) return alert(error.message);
+
+    setItemsByDay((prev) => ({
+      ...prev,
+      [selectedDayId]: [...(prev[selectedDayId] ?? []), data],
+    }));
+  }
+
+  // ✅ modal quitar
+  function requestRemove(itemId) {
+    setPendingRemoveId(itemId);
+    setConfirmOpen(true);
+  }
+
+  async function confirmRemove() {
+    if (!selectedDayId || !pendingRemoveId) return;
+
+    const itemId = pendingRemoveId;
+    const backup = itemsByDay[selectedDayId] ?? [];
+
+    // optimista
+    removeItemFromState(setItemsByDay, selectedDayId, itemId);
+
+    setConfirmOpen(false);
+    setPendingRemoveId(null);
+
+    const { error } = await supabase.from("program_day_items").delete().eq("id", itemId);
+    if (error) {
+      setItemsByDay((prev) => ({ ...prev, [selectedDayId]: backup }));
+      return alert(error.message);
     }
+  }
 
-    if (!program) {
-        return (
-            <div style={{ maxWidth: 480, margin: "0 auto", padding: "18px 16px" }}>
-                <div style={{ color: "var(--muted)" }}>No se encontró la rutina.</div>
-            </div>
-        );
+  function startEdit(it) {
+    setEditingItemId(it.id);
+    const p = it.prescription ?? {};
+    setDraft({
+      series: p.series ?? 3,
+      repeticiones: p.repeticiones ?? "8-12",
+      descanso: p.descanso ?? 90,
+      kg: it.kg ?? "",
+      notes: it.notes ?? "",
+    });
+  }
+
+  function cancelEdit() {
+    setEditingItemId(null);
+  }
+
+  async function saveEdit(it) {
+    const nextPrescription = {
+      series: safeNum(draft.series) ?? 0,
+      repeticiones: String(draft.repeticiones ?? ""),
+      descanso: safeNum(draft.descanso) ?? 0,
+    };
+
+    const patch = {
+      prescription: nextPrescription,
+      kg: safeNum(draft.kg),
+      notes: (draft.notes ?? "").trim() || null,
+    };
+
+    // optimista
+    patchItemInState(setItemsByDay, it.program_day_id, it.id, patch);
+    setEditingItemId(null);
+
+    const { error } = await supabase.from("program_day_items").update(patch).eq("id", it.id);
+
+    if (error) {
+      alert(error.message);
+      await loadAll();
     }
+  }
 
+  async function toggleDone(it) {
+    const nextDone = !it.done;
+    const nextDoneAt = nextDone ? new Date().toISOString() : null;
+
+    patchItemInState(setItemsByDay, it.program_day_id, it.id, { done: nextDone, done_at: nextDoneAt });
+
+    const { error } = await supabase.from("program_day_items").update({ done: nextDone, done_at: nextDoneAt }).eq("id", it.id);
+
+    if (error) {
+      alert(error.message);
+      patchItemInState(setItemsByDay, it.program_day_id, it.id, { done: it.done, done_at: it.done_at ?? null });
+    }
+  }
+
+  // ✅ excluir ejercicios ya agregados
+  const excludeIds = useMemo(() => {
+    if (!selectedDayId) return [];
+    return (itemsByDay[selectedDayId] ?? []).map((it) => it.exercise_id);
+  }, [itemsByDay, selectedDayId]);
+
+  if (loading) {
     return (
-        <div style={{ maxWidth: 480, margin: "0 auto", padding: "18px 16px" }}>
-            {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <div>
-                    <div style={{ fontSize: 18, fontWeight: 950 }}>{program.title}</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                        Armá días y agregá ejercicios
-                    </div>
-                </div>
-                <div
-                    style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 14,
-                        background: "rgba(255,255,255,.04)",
-                        border: "1px solid var(--stroke)",
-                        display: "grid",
-                        placeItems: "center",
-                        boxShadow: "var(--shadow)",
-                    }}
-                    title="Perfil"
-                >
-                    🗓️
-                </div>
-            </div>
-
-            {/* DÍAS */}
-            <div
-                style={{
-                    marginTop: 16,
-                    background: "rgba(18,24,35,.65)",
-                    border: "1px solid var(--stroke)",
-                    borderRadius: 18,
-                    padding: 12,
-                    boxShadow: "var(--shadow)",
-                }}
-            >
-                <div style={{ fontWeight: 950 }}>Días</div>
-
-                <form onSubmit={createDay} style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                    <input
-                        value={newDayTitle}
-                        onChange={(e) => setNewDayTitle(e.target.value)}
-                        placeholder="Título del día (ej: Día A / Piernas)"
-                        style={{ width: "100%" }}
-                    />
-                    <button type="submit">+</button>
-                </form>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-                    {days.map((d) => (
-                        <button
-                            key={d.id}
-                            type="button"
-                            onClick={() => setSelectedDayId(d.id)}
-                            style={{
-                                background: selectedDayId === d.id
-                                    ? "linear-gradient(180deg,#ff9a3c,#ff7a18)"
-                                    : "rgba(255,255,255,.06)",
-                                border: "1px solid var(--stroke)",
-                                color: selectedDayId === d.id ? "#111" : "var(--text)",
-                                boxShadow: "none",
-                                padding: "10px 12px",
-                                borderRadius: 14,
-                                fontWeight: 900,
-                            }}
-                        >
-                            {d.title}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* AGREGAR EJERCICIOS */}
-            <div style={{ marginTop: 14 }}>
-                <div
-                    style={{
-                        background: "rgba(18,24,35,.65)",
-                        border: "1px solid var(--stroke)",
-                        borderRadius: 18,
-                        padding: 12,
-                        boxShadow: "var(--shadow)",
-                    }}
-                >
-                    <div style={{ fontWeight: 950 }}>Agregar ejercicios</div>
-
-                    <div style={{ marginTop: 10 }}>
-                        <input
-                            value={exerciseQuery}
-                            onChange={(e) => setExerciseQuery(e.target.value)}
-                            placeholder="Buscar ejercicio..."
-                            style={{ width: "100%" }}
-                        />
-                    </div>
-
-                    <div style={{ marginTop: 10, fontSize: 12, color: "var(--muted)" }}>
-                        Día seleccionado: {days.find((d) => d.id === selectedDayId)?.title ?? "—"}
-                    </div>
-                </div>
-
-                {/* Grid de grupos */}
-                <div
-                    style={{
-                        marginTop: 12,
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                        gap: 12,
-
-                    }}
-                >
-                    {grouped.map(([label, list]) => {
-                        const meta = GROUP_META[label] ?? { emoji: "🏷️" };
-
-                        return (
-                            <button
-                                key={label}
-                                type="button"
-                                onClick={() => {
-                                    setOpenGroup(label);
-                                    setExpandedId(null);
-                                }}
-                                style={{
-                                    padding: 0,
-                                    background: "transparent",
-                                    boxShadow: "none",
-                                    color: "white",
-
-                                }}
-                            >
-                                <div
-                                    style={{
-                                        borderRadius: 18,
-                                        border: "1px solid var(--stroke)",
-                                        background: "rgba(18,24,35,.65)",
-                                        boxShadow: "var(--shadow)",
-                                        padding: 14,
-                                        textAlign: "left",
-                                        minHeight: 92,
-                                        display: "grid",
-                                        gap: 8,
-                                        alignContent: "start",
-                                    }}
-                                >
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                        <div
-                                            style={{
-                                                width: 36,
-                                                height: 36,
-                                                borderRadius: 14,
-                                                background: "rgba(255,122,24,.16)",
-                                                border: "1px solid rgba(255,122,24,.25)",
-                                                display: "grid",
-                                                placeItems: "center",
-                                                fontSize: 18,
-                                            }}
-                                        >
-                                            {meta.emoji}
-                                        </div>
-                                        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 800 }}>
-                                            {list.length}
-                                        </div>
-                                    </div>
-
-                                    <div style={{ fontWeight: 950, fontSize: 15 }}>{label}</div>
-                                    <div style={{ fontSize: 12, color: "var(--muted)" }}>Tocá para ver</div>
-                                </div>
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {/* EJERCICIOS DEL DÍA (con prescripción editable) */}
-            <div
-                style={{
-                    marginTop: 14,
-                    background: "rgba(18,24,35,.65)",
-                    border: "1px solid var(--stroke)",
-                    borderRadius: 18,
-                    padding: 12,
-                    boxShadow: "var(--shadow)",
-                }}
-            >
-                <div style={{ fontWeight: 950 }}>Ejercicios del día</div>
-
-                {!selectedDayId ? (
-                    <div style={{ marginTop: 10, color: "var(--muted)" }}>Elegí un día.</div>
-                ) : (itemsByDay[selectedDayId] ?? []).length === 0 ? (
-                    <div style={{ marginTop: 10, color: "var(--muted)" }}>Este día todavía no tiene ejercicios.</div>
-                ) : (
-                    <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                        {(itemsByDay[selectedDayId] ?? []).map((it) => {
-                            const ex = exById.get(it.exercise_id);
-                            const d = getDraft(it);
-
-                            return (
-                                <div
-                                    key={it.id}
-                                    style={{
-                                        borderRadius: 18,
-                                        border: "1px solid var(--stroke)",
-                                        background: "rgba(255,255,255,.03)",
-                                        padding: 12,
-                                    }}
-                                >
-                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
-                                        <div>
-                                            <div style={{ fontWeight: 950 }}>{ex?.name ?? "Ejercicio"}</div>
-                                            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                                                {ex?.primary_muscle ?? "—"} • {ex?.equipment ?? "—"} • {ex?.category ?? "—"}
-                                            </div>
-                                        </div>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => removeItem(it.id)}
-                                            style={{
-                                                background: "rgba(255,255,255,.06)",
-                                                border: "1px solid var(--stroke)",
-                                                color: "var(--text)",
-                                                boxShadow: "none",
-                                                padding: "10px 12px",
-                                                borderRadius: 14,
-                                                fontWeight: 900,
-                                            }}
-                                        >
-                                            Quitar
-                                        </button>
-                                    </div>
-
-                                    <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                                        <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-                                            Sets
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                value={d.sets}
-                                                onChange={(e) => updateDraft(it.id, { sets: e.target.value })}
-                                                style={{ width: 90 }}
-                                            />
-                                        </label>
-
-                                        <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-                                            Reps
-                                            <input
-                                                value={d.reps}
-                                                onChange={(e) => updateDraft(it.id, { reps: e.target.value })}
-                                                placeholder="8-12"
-                                                style={{ width: 120 }}
-                                            />
-                                        </label>
-
-                                        <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-                                            Descanso (seg)
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                value={d.rest}
-                                                onChange={(e) => updateDraft(it.id, { rest: e.target.value })}
-                                                style={{ width: 140 }}
-                                            />
-                                        </label>
-
-                                        <div style={{ display: "flex", alignItems: "end" }}>
-                                            <button
-                                                type="button"
-                                                onClick={() => savePrescription(it)}
-                                                disabled={savingItemId === it.id}
-                                            >
-                                                {savingItemId === it.id ? "Guardando..." : "Guardar"}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-
-            {/* PANEL / MODAL del grupo (con + Agregar) */}
-            {openGroup && (
-                <div
-                    onClick={() => setOpenGroup(null)}
-                    style={{
-                        position: "fixed",
-                        inset: 0,
-                        background: "rgba(0,0,0,.55)",
-                        backdropFilter: "blur(6px)",
-                        zIndex: 80,
-                        padding: 14,
-                        display: "grid",
-                        placeItems: "end center",
-                    }}
-                >
-                    <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            width: "min(520px, 100%)",
-                            maxHeight: "86vh",
-                            overflow: "auto",
-                            borderRadius: 22,
-                            border: "1px solid var(--stroke)",
-                            background: "rgba(18,24,35,.92)",
-                            boxShadow: "var(--shadow)",
-                            padding: 14,
-                        }}
-                    >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                            <div>
-                                <div style={{ fontSize: 16, fontWeight: 950 }}>
-                                    {(GROUP_META[openGroup]?.emoji ?? "🏷️")} {openGroup}
-                                </div>
-                                <div style={{ fontSize: 12, color: "var(--muted)" }}>{openList.length} ejercicios</div>
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={() => setOpenGroup(null)}
-                                style={{
-                                    background: "rgba(255,255,255,.06)",
-                                    border: "1px solid var(--stroke)",
-                                    color: "var(--text)",
-                                    boxShadow: "none",
-                                    padding: "10px 12px",
-                                    borderRadius: 14,
-                                    fontWeight: 900,
-                                }}
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>
-                            Día seleccionado: {days.find((d) => d.id === selectedDayId)?.title ?? "—"}
-                        </div>
-
-                        <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                            {openList.map((ex) => (
-                                <div key={ex.id} style={{ position: "relative" }}>
-                                    {/* Botón agregar flotante */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation(); // ✅ no cierra/abre la card
-                                            addExerciseToDay(ex.id);
-                                        }}
-                                        style={{
-                                            position: "absolute",
-                                            right: 12,
-                                            top: 12,
-                                            zIndex: 2,
-                                            padding: "10px 12px",
-                                            borderRadius: 14,
-                                            fontWeight: 950,
-                                        }}
-                                    >
-                                        + Agregar
-                                    </button>
-
-                                    {/* Card del ejercicio (expandible) */}
-                                    <div onClick={(e) => e.stopPropagation()}>
-                                        {/* Importante: FitCard maneja su propio toggle con onToggle.
-                        Para que el botón + no afecte, ya usamos stopPropagation arriba. */}
-                                        <div>
-                                            {/* wrapper para permitir click card sin que se cierre el modal */}
-                                            <FitCard
-                                                ex={ex}
-                                                expanded={expandedId === ex.id}
-                                                onToggle={() => setExpandedId((prev) => (prev === ex.id ? null : ex.id))}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div style={{ height: 10 }} />
-                    </div>
-                </div>
-            )}
-        </div>
+      <Layout title="Rutina">
+        <p>Cargando...</p>
+      </Layout>
     );
+  }
+
+  if (!program) {
+    return (
+      <Layout title="Rutina">
+        <p>No se encontró la rutina.</p>
+      </Layout>
+    );
+  }
+
+  const dayItems = itemsByDay[selectedDayId] ?? [];
+
+  return (
+    <Layout title={`Rutina: ${program.title}`}>
+      {/* ✅ Responsive mobile-first rápido */}
+      <style>{`
+        .pd-items { display: grid; gap: 10px; margin-top: 12px; }
+        .pd-item {
+          border: 1px solid #eee;
+          border-radius: 12px;
+          padding: 12px;
+          display: grid;
+          gap: 12px;
+          position: relative;
+        }
+        .pd-media {
+          width: 100%;
+          height: 170px;
+          border-radius: 12px;
+          overflow: hidden;
+          background: #f5f5f5;
+        }
+        .pd-media img { width: 100%; height: 100%; object-fit: cover; }
+
+        @media (min-width: 640px) {
+          .pd-item { grid-template-columns: 110px 1fr; align-items: start; }
+          .pd-media { width: 110px; height: 90px; border-radius: 10px; }
+        }
+
+        .pd-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+        .pd-grid2 { display:grid; gap:10px; grid-template-columns:1fr; }
+        @media (min-width: 640px) { .pd-grid2 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+      `}</style>
+
+      <div style={{ display: "grid", gap: 16 }}>
+        {/* Días */}
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
+          <strong>Días</strong>
+
+          <form onSubmit={createDay} style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+            <input
+              value={newDayTitle}
+              onChange={(e) => setNewDayTitle(e.target.value)}
+              placeholder="Título del día (ej: Día A / Piernas)"
+              style={{ padding: 10, minWidth: 260 }}
+            />
+            <button type="submit">Agregar día</button>
+          </form>
+
+          {days.length === 0 ? (
+            <p style={{ marginTop: 12 }}>Todavía no hay días. Creá el primero.</p>
+          ) : (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+              {days.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => setSelectedDayId(d.id)}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                    background: selectedDayId === d.id ? "#eee" : "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  {d.title}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Picker */}
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
+          <strong>Agregar ejercicios al día</strong>
+          <div style={{ marginTop: 12 }}>
+            <ExercisePicker title="Agregar ejercicios" excludeIds={excludeIds} onPick={addExerciseToDay} />
+          </div>
+        </div>
+
+        {/* Lista del día */}
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
+          <strong>Ejercicios del día</strong>
+
+          {!selectedDayId ? (
+            <p style={{ marginTop: 12 }}>Elegí un día.</p>
+          ) : dayItems.length === 0 ? (
+            <p style={{ marginTop: 12 }}>Este día todavía no tiene ejercicios.</p>
+          ) : (
+            <div className="pd-items">
+              {dayItems.map((it) => {
+                const ex = it.exercises;
+                const p = it.prescription ?? {};
+                const isEditing = editingItemId === it.id;
+
+return (
+  <div key={it.id} className="pd-item" style={{ opacity: it.done ? 0.7 : 1 }}>
+    {/* media */}
+    <div className="pd-media">
+      {ex?.media_url ? (
+        <img src={ex.media_url} alt={ex?.name ?? "Ejercicio"} />
+      ) : (
+        <div style={{ padding: 8, fontSize: 12, opacity: 0.7 }}>Sin media</div>
+      )}
+    </div>
+
+    {/* info */}
+    <div style={{ display: "grid", gap: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          alignItems: "flex-start",
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontWeight: 950,
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>#{it.sort_order}</span>
+
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                maxWidth: "100%",
+              }}
+              title={ex?.name ?? `Ejercicio ${it.exercise_id}`}
+            >
+              {ex?.name ?? `Ejercicio ${it.exercise_id}`}
+            </span>
+
+            {/* ✅ Badge finalizado (solo si done) */}
+            {it.done && (
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  background: "rgba(255,255,255,.06)",
+                  border: "1px solid var(--stroke)",
+                  color: "rgba(255,255,255,.85)",
+                }}
+              >
+                ✅ Ejercicio finalizado
+              </span>
+            )}
+          </div>
+
+          {/* ✅ Solo mostramos metadata si NO está finalizado */}
+          {!it.done && (
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+              {ex?.primary_muscle ?? "—"} • {ex?.equipment ?? "—"} • {ex?.category ?? "—"}
+            </div>
+          )}
+        </div>
+
+        {/* ✅ Acciones */}
+        <div className="pd-actions">
+          {/* Si está finalizado: "Editar" revierte el estado */}
+          <button type="button" onClick={() => toggleDone(it)}>
+            {it.done ? "Editar" : "Finalizado"}
+          </button>
+
+          <button type="button" onClick={() => requestRemove(it.id)}>
+            Quitar
+          </button>
+        </div>
+      </div>
+
+      {/* ✅ Si está finalizado: ocultamos TODO el resto */}
+      {it.done ? null : (
+        <>
+          {ex?.description ? (
+            <div style={{ fontSize: 13, opacity: 0.9 }}>{ex.description}</div>
+          ) : null}
+
+          {/* Inline edit panel */}
+          {isEditing ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div className="pd-grid2">
+                <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.85 }}>
+                  Series
+                  <input
+                    value={draft.series}
+                    onChange={(e) => setDraft((d) => ({ ...d, series: e.target.value }))}
+                    style={{ padding: 10 }}
+                  />
+                </label>
+
+                <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.85 }}>
+                  Repeticiones
+                  <input
+                    value={draft.repeticiones}
+                    onChange={(e) => setDraft((d) => ({ ...d, repeticiones: e.target.value }))}
+                    style={{ padding: 10 }}
+                  />
+                </label>
+
+                <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.85 }}>
+                  Descanso (seg)
+                  <input
+                    value={draft.descanso}
+                    onChange={(e) => setDraft((d) => ({ ...d, descanso: e.target.value }))}
+                    style={{ padding: 10 }}
+                  />
+                </label>
+
+                <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.85 }}>
+                  KG
+                  <input
+                    value={draft.kg}
+                    onChange={(e) => setDraft((d) => ({ ...d, kg: e.target.value }))}
+                    style={{ padding: 10 }}
+                  />
+                </label>
+              </div>
+
+              <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.85 }}>
+                Notas
+                <textarea
+                  value={draft.notes}
+                  onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
+                  style={{ padding: 10, minHeight: 70, resize: "vertical" }}
+                />
+              </label>
+
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" onClick={cancelEdit}>
+                  Cancelar
+                </button>
+                <button type="button" onClick={() => saveEdit(it)} style={{ fontWeight: 900 }}>
+                  Guardar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>
+                <strong>Series:</strong> {p.series ?? "—"} •{" "}
+                <strong>Repeticiones:</strong> {p.repeticiones ?? "—"} •{" "}
+                <strong>Descanso:</strong> {p.descanso ?? "—"}s •{" "}
+                <strong>KG:</strong> {it.kg ?? "—"}
+              </div>
+
+              {it.notes ? (
+                <div style={{ fontSize: 12, opacity: 0.85 }}>
+                  <strong>Notas:</strong> {it.notes}
+                </div>
+              ) : null}
+
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" onClick={() => startEdit(it)}>
+                  Editar
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  </div>
+);
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ✅ El modal va acá, al final del return */}
+      <ConfirmModal
+        open={confirmOpen}
+        title="Quitar ejercicio"
+        message="¿Estás seguro que desea quitar el ejercicio de la rutina?"
+        confirmText="Sí, quitar"
+        cancelText="Cancelar"
+        onCancel={() => {
+          setConfirmOpen(false);
+          setPendingRemoveId(null);
+        }}
+        onConfirm={confirmRemove}
+      />
+    </Layout>
+  );
 }

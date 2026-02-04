@@ -66,3 +66,166 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+/* =========================
+   MOBILE FIRST BASE
+========================= */
+
+:root{
+  --pageMax: 1100px;
+  --pagePad: 16px;
+  --navH: 92px; /* alto aprox del bottom nav */
+}
+
+/* contenedor de página */
+.page {
+  max-width: var(--pageMax);
+  margin: 0 auto;
+  padding: 18px var(--pagePad);
+  padding-bottom: calc(var(--navH) + 28px); /* ✅ evita que el nav tape */
+}
+
+/* cards grid: MOBILE = 2 columnas SIEMPRE */
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)); /* ✅ 2 sí o sí */
+  gap: 12px;
+}
+
+/* desktop: entran las que entren */
+@media (min-width: 820px) {
+  .grid-cards {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+  }
+}
+
+/* tarjetas base */
+.card {
+  border-radius: 18px;
+  border: 1px solid var(--stroke);
+  background: rgba(18,24,35,.65);
+  box-shadow: var(--shadow);
+}
+
+/* botón card sin estilos raros */
+.cardBtn {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* text helpers */
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ✅ card tipo "grupo muscular" o "rutina" */
+.groupCard {
+  position: relative;
+  padding: 14px;
+  min-height: 140px;
+  display: grid;
+  grid-template-rows: auto 1fr auto; /* icono, título, CTA */
+  gap: 10px;
+}
+
+/* contador arriba a la derecha */
+.badgeCount {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(255,255,255,.75);
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--stroke);
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+/* contenedor imagen */
+.groupIconWrap {
+  display: grid;
+  place-items: center;
+}
+.groupIcon {
+  width: 80px;
+  height: 80px;
+  border-radius: 14px;
+  background: rgba(255,122,24,.16);
+  border: 1px solid rgba(255,122,24,.25);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.groupIcon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* título abajo de la imagen */
+.groupTitle {
+  font-weight: 950;
+  font-size: 16px;
+  line-height: 1.1;
+  color: white;
+  text-align: center;
+}
+
+/* CTA abajo del todo */
+.groupCta {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
+}
+
+/* =========================
+   PROGRAM DETAIL responsive
+========================= */
+.pd-item {
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  background: rgba(18,24,35,.65);
+  box-shadow: var(--shadow);
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+/* mobile: 1 columna */
+.pd-media {
+  width: 100%;
+  height: 120px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255,255,255,.06);
+}
+.pd-media img { width: 100%; height: 100%; object-fit: cover; }
+
+/* desktop: 2 columnas */
+@media (min-width: 820px) {
+  .pd-item {
+    grid-template-columns: 140px 1fr;
+    align-items: start;
+  }
+  .pd-media {
+    width: 140px;
+    height: 110px;
+  }
+}
+
+.pd-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}

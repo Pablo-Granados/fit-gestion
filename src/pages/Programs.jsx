@@ -173,7 +173,7 @@ export default function Programs() {
               .program-grid {
                 display: grid;
                 gap: 12px;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-columns: repeat(1, minmax(0, 1fr));
               }
               /* Desktop: agrega columnas, no estira infinito */
               @media (min-width: 900px) {
@@ -253,10 +253,11 @@ export default function Programs() {
                         type="button"
                         onClick={() => nav(`/programs/${p.id}`)}
                         style={{
+                          color: "whitesmoke",
                           fontWeight: 900,
                           borderRadius: 14,
                           padding: "10px 12px",
-                          background: "rgba(255,122,24,.15)",
+                          background: "rgba(0, 173, 43, 0.71)",
                           border: "1px solid rgba(255,122,24,.28)",
                         }}
                       >
@@ -267,10 +268,11 @@ export default function Programs() {
                         type="button"
                         onClick={() => openEdit(p)}
                         style={{
+                          color: "whitesmoke",
                           fontWeight: 900,
                           borderRadius: 14,
                           padding: "10px 12px",
-                          background: "rgba(255,255,255,.06)",
+                          background: "rgba(3, 0, 201, 0.49)",
                           border: "1px solid var(--stroke)",
                         }}
                       >
@@ -280,12 +282,11 @@ export default function Programs() {
                       <button
                         type="button"
                         onClick={() => deleteProgram(p.id)}
-                        style={{
-                          fontWeight: 900,
+                        style={{                          fontWeight: 900,
                           borderRadius: 14,
                           padding: "10px 12px",
-                          background: "rgba(255,80,80,.10)",
-                          border: "1px solid rgba(255,80,80,.25)",
+                          background: "rgba(255, 76, 76, 0.85)",
+                          border: "1px solid rgba(255, 105, 105, 0.88)",
                           color: "rgba(255,255,255,.92)",
                         }}
                       >
